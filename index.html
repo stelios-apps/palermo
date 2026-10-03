@@ -18,7 +18,8 @@
 html,body{height:100%}
 body{background:var(--bg);color:var(--text);font-family:var(--font-body);
   padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
-  background-image:radial-gradient(900px 500px at 50% -10%,#1b2142 0%,transparent 70%)}
+  position:relative}
+body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(900px 500px at 50% -10%,#1b2142 0%,transparent 70%)}
 .screen{display:none;min-height:100%;max-width:460px;margin:0 auto;padding:28px 20px;flex-direction:column;gap:16px}
 .screen.active{display:flex}
 h1{font-family:var(--font-title);font-weight:800;font-size:2.6rem;letter-spacing:.02em;color:var(--gold);text-align:center;margin-top:8vh}
@@ -64,6 +65,15 @@ button:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowe
   border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-top:8px;cursor:pointer;color:var(--text);font-size:1rem}
 .chip small{display:block;color:var(--muted);font-size:.8rem;margin-top:2px}
 .chip input{width:22px;height:22px;margin:0;padding:0;accent-color:var(--accent);flex-shrink:0}
+.flip{perspective:1000px;height:380px;cursor:pointer;margin:4px 0}
+.flip-inner{position:relative;width:100%;height:100%;transition:transform .7s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
+.flip.open .flip-inner{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:26px;text-align:center}
+.face.back{background:repeating-linear-gradient(45deg,var(--surface),var(--surface) 12px,var(--surface-2) 12px,var(--surface-2) 24px);border:2px solid var(--gold);color:var(--gold);font-family:var(--font-title);font-size:2rem;font-weight:800;letter-spacing:.12em}
+.face.front{transform:rotateY(180deg);background:var(--surface);border:2px solid var(--team,var(--gold));box-shadow:0 0 50px -12px var(--team,var(--gold))}
+.face.front h2{font-family:var(--font-title);font-size:2.1rem;color:var(--text)}
+.team-tag{font-size:.8rem;color:var(--team);border:1px solid var(--team);border-radius:99px;padding:3px 14px}
+.moon{width:96px;height:96px;border-radius:50%;box-shadow:inset -26px -8px 0 0 var(--gold),0 0 60px -10px var(--gold)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -109,8 +119,36 @@ button:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowe
     <button id="btnClearBots" class="ghost">Αφαίρεση δοκιμαστικών</button>
   </div>
   <p class="hint" id="lobbyHint"></p>
-  <button id="btnStart" style="display:none" disabled>Ρυθμίσεις παιχνιδιού</button>
+  <button id="btnPlay" style="display:none" disabled>Έναρξη παιχνιδιού</button>
+  <button id="btnStart" class="ghost" style="display:none" disabled>Ρυθμίσεις παιχνιδιού</button>
   <button id="btnLeave" class="ghost">Έξοδος</button>
+</section>
+
+<!-- ΑΠΟΚΑΛΥΨΗ ΡΟΛΟΥ -->
+<section id="reveal" class="screen">
+  <h1 style="font-size:1.6rem;margin-top:2vh">Ο ρόλος σου</h1>
+  <p class="tagline" style="margin:0">Πάτα την κάρτα. Μην τη δείξεις σε κανέναν.</p>
+  <div class="flip" id="flip" role="button" tabindex="0" aria-label="Γύρνα την κάρτα">
+    <div class="flip-inner">
+      <div class="face back">ΠΑΛΕΡΜΟ<small style="color:var(--muted);font-family:var(--font-body);font-size:.9rem">Πάτα για να δεις</small></div>
+      <div class="face front">
+        <span class="team-tag" id="rTeam"></span>
+        <h2 id="rName"></h2>
+        <p id="rDesc" style="color:var(--muted);line-height:1.5"></p>
+        <p id="rMates" style="color:var(--text);font-size:.95rem"></p>
+      </div>
+    </div>
+  </div>
+  <button id="btnReady">Το είδα, είμαι έτοιμος</button>
+  <p class="hint" id="readyHint"></p>
+  <details id="adminRoles" style="display:none;color:var(--muted)"><summary>Admin: ρόλοι όλων</summary><ul class="players" id="adminRolesList" style="margin-top:8px"></ul></details>
+</section>
+
+<!-- ΝΥΧΤΑ -->
+<section id="night" class="screen" style="align-items:center;justify-content:center;text-align:center">
+  <div class="moon"></div>
+  <h1 style="margin-top:12px;font-size:2rem">Η νύχτα έπεσε…</h1>
+  <p class="hint">Όλοι είδαν τον ρόλο τους. Οι νυχτερινές ενέργειες έρχονται στο επόμενο στάδιο.</p>
 </section>
 
 <!-- ΡΥΘΜΙΣΕΙΣ HOST -->
@@ -149,6 +187,8 @@ const db = firebase.database();
 const MIN_PLAYERS = 4, MAX_PLAYERS = 15;
 
 /* ===== Ρόλοι ===== */
+function say(t){ try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; u.rate = .9; speechSynthesis.speak(u); } catch (e) {} }
+const rand = n => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; };
 const ROLES = [
  {id:'godfather',team:'mafia',name:'Αρχιμαφιόζος',desc:'Ο Αστυνόμος τον βλέπει «Αθώο». Έχει τον τελικό λόγο στη δολοφονία.',max:1},
  {id:'goon',team:'mafia',name:'Μαφιόζος',desc:'Ο βασικός ρόλος της Μαφίας. Ψηφίζει το θύμα.',max:4},
@@ -190,15 +230,12 @@ const CARDS = [
 
 /* ===== Αυτόματη πρόταση ρόλων ανά αριθμό παικτών ===== */
 function suggest(n){
-  const r = {godfather:1, doctor:1, cop:1};
-  if (n >= 6) r.goon = 1;
-  if (n >= 7) r.swapper = 1;
-  if (n >= 8) r.saboteur = 1;
-  if (n >= 9) r.tracker = 1;
-  if (n >= 10) r.bodyguard = 1;
-  if (n >= 11) { r.blackmailer = 1; r.goon = 2; }
-  if (n >= 12) r.sniper = 1;
-  if (n >= 14) { r.framer = 1; r.jester = 1; r.goon = 3; }
+  const mafiaCount = Math.max(1, Math.round(n / 3.5));
+  const specials = Math.min(6, Math.max(2, Math.round(n * 0.4)));
+  const r = {};
+  ['godfather','goon','saboteur','blackmailer','framer'].slice(0, mafiaCount).forEach(id => r[id] = 1);
+  ['doctor','cop','swapper','tracker','bodyguard','sniper'].slice(0, specials).forEach(id => r[id] = 1);
+  if (n >= 12) r.jester = 1;
   return r;
 }
 
@@ -210,7 +247,7 @@ const citizenCount = () => Math.max(0, lastCount - sumOthers());
 const teamCount = team => ROLES.filter(r => r.team === team).reduce((a, r) => a + (r.id === 'citizen' ? citizenCount() : (cfg.roles[r.id] || 0)), 0);
 
 function openSetup(){
-  const saved = lastRoom && lastRoom.config;
+  const saved = lastRoom && lastRoom.config && lastRoom.config.playerCount === lastCount ? lastRoom.config : null;
   if (saved) {
     cfg.roles = Object.assign({}, saved.roles); delete cfg.roles.citizen;
     cfg.dealCards = saved.dealCards; cfg.cards = new Set(saved.cards || []);
@@ -378,6 +415,7 @@ function enterLobby(code){
     if (!snap.exists()) { leaveLocal('Το δωμάτιο έκλεισε.'); return; }
     const room = snap.val(), players = room.players || {};
     if (!players[uid]) { leaveLocal('Αφαιρέθηκες από το δωμάτιο.'); return; }
+    if (room.status === 'playing') { lastRoom = room; handleGame(room); return; }
     const list = Object.entries(players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
     lastCount = list.length; lastRoom = room;
     $('count').textContent = `${list.length} / ${MAX_PLAYERS}`;
@@ -392,8 +430,11 @@ function enterLobby(code){
     });
     const enough = list.length >= MIN_PLAYERS;
     $('btnStart').disabled = !enough;
+    const cfgOk = room.config && room.config.playerCount === list.length;
+    $('btnPlay').style.display = isHost ? 'block' : 'none';
+    $('btnPlay').disabled = !(enough && cfgOk);
     $('lobbyHint').textContent = isHost
-      ? (enough ? (room.config ? 'Ρυθμίσεις αποθηκευμένες ✓ Περίμενε να μπουν όλοι.' : 'Όλα έτοιμα. Πάτα «Ρυθμίσεις παιχνιδιού» για ρόλους και κάρτες.') : `Χρειάζονται τουλάχιστον ${MIN_PLAYERS} παίκτες.`)
+      ? (enough ? (cfgOk ? 'Ρυθμίσεις αποθηκευμένες ✓ Πάτα Έναρξη όταν μπουν όλοι.' : (room.config ? 'Άλλαξε ο αριθμός παικτών. Άνοιξε ξανά τις ρυθμίσεις και αποθήκευσε.' : 'Πάτα «Ρυθμίσεις παιχνιδιού» για ρόλους και κάρτες.')) : `Χρειάζονται τουλάχιστον ${MIN_PLAYERS} παίκτες.`)
       : 'Περιμένεις τον Host να ξεκινήσει το παιχνίδι…';
   });
   unsubscribe = () => ref.off('value', handler);
@@ -401,7 +442,7 @@ function enterLobby(code){
 
 function leaveLocal(msg){
   if (unsubscribe) unsubscribe(); unsubscribe = null;
-  pin = null; isHost = false; show('home'); setError(msg || '');
+  pin = null; isHost = false; privP = null; myPriv = null; shownReveal = false; show('home'); setError(msg || '');
 }
 async function leaveRoom(){
   if (!pin) return;
@@ -410,6 +451,63 @@ async function leaveRoom(){
   else await db.ref(`rooms/${code}/players/${uid}`).remove();
   leaveLocal('');
 }
+
+/* ===== Έναρξη παιχνιδιού & διανομή ρόλων ===== */
+let privP = null, myPriv = null, adminPriv = null, shownReveal = false;
+async function startGame(){
+  const room = lastRoom, c = room.config, ids = Object.keys(room.players);
+  const pool = []; Object.entries(c.roles).forEach(([r, n]) => { for (let i = 0; i < n; i++) pool.push(r); });
+  if (pool.length !== ids.length) { alert('Οι ρόλοι δεν ταιριάζουν με τους παίκτες. Αποθήκευσε ξανά τις ρυθμίσεις.'); return; }
+  for (let i = pool.length - 1; i > 0; i--) { const j = rand(i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const team = r => ROLES.find(x => x.id === r).team;
+  const roleOf = {}; ids.forEach((id, i) => roleOf[id] = pool[i]);
+  const mafia = ids.filter(id => team(roleOf[id]) === 'mafia');
+  const priv = {}, alive = {}, ready = {};
+  ids.forEach(id => {
+    const t = team(roleOf[id]);
+    priv[id] = { role: roleOf[id], team: t, mates: t === 'mafia' ? mafia.filter(m => m !== id).map(m => room.players[m].name) : [] };
+    alive[id] = true; if (room.players[id].bot) ready[id] = true;
+  });
+  buzz();
+  await db.ref('rooms/' + pin).update({ private: priv, game: { phase: 'reveal', day: 0, alive, ready }, status: 'playing' });
+  say('Το παιχνίδι ξεκινά. Κοιτάξτε κρυφά τον ρόλο σας στο κινητό σας.');
+}
+
+const TEAM_UI = { mafia: ['Μαφία', '#e03a4f'], city: ['Πόλη', '#7fb4ff'], neutral: ['Ουδέτερος', '#d4a85a'] };
+async function handleGame(room){
+  const g = room.game || {};
+  if (!privP) privP = (async () => {
+    myPriv = (await db.ref(`rooms/${pin}/private/${uid}`).get()).val();
+    if (isAdmin) adminPriv = (await db.ref(`rooms/${pin}/private`).get()).val();
+    const role = ROLES.find(r => r.id === myPriv.role), [tn, col] = TEAM_UI[myPriv.team];
+    $('flip').style.setProperty('--team', col);
+    $('rTeam').textContent = tn; $('rName').textContent = role.name; $('rDesc').textContent = role.desc;
+    $('rMates').textContent = myPriv.mates.length ? 'Η Μαφία σου: ' + myPriv.mates.join(', ') : (myPriv.team === 'mafia' ? 'Είσαι μόνος στη Μαφία.' : '');
+    if (isAdmin && adminPriv) {
+      $('adminRoles').style.display = 'block'; $('adminRolesList').innerHTML = '';
+      Object.entries(adminPriv).forEach(([id, v]) => {
+        const li = document.createElement('li'); li.textContent = `${room.players[id].name}: ${ROLES.find(r => r.id === v.role).name}`;
+        $('adminRolesList').appendChild(li);
+      });
+    }
+  })();
+  await privP;
+  if (g.phase === 'reveal') {
+    if (!shownReveal) { shownReveal = true; show('reveal'); }
+    const total = Object.keys(room.players).length, ready = Object.keys(g.ready || {}).length;
+    $('readyHint').textContent = `Έτοιμοι: ${ready} / ${total}`;
+    if (g.ready && g.ready[uid]) { $('btnReady').disabled = true; $('btnReady').textContent = 'Περιμένουμε τους άλλους…'; }
+    if (isHost && ready >= total) db.ref(`rooms/${pin}/game/phase`).set('night');
+  } else {
+    show('night');
+    if (isHost && g.phase === 'night' && !window.__saidNight) { window.__saidNight = true; say('Η νύχτα έπεσε. Όλοι κλείστε τα μάτια σας.'); }
+  }
+}
+const flipCard = () => $('flip').classList.toggle('open');
+$('flip').onclick = flipCard;
+$('flip').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flipCard(); } };
+$('btnReady').onclick = () => { buzz(); db.ref(`rooms/${pin}/game/ready/${uid}`).set(true); };
+$('btnPlay').onclick = startGame;
 
 /* ===== Κουμπιά ===== */
 $('btnCreate').onclick = createRoom;
