@@ -82,6 +82,9 @@ button.pick:hover{background:var(--surface-2)}
 button.pick.sel{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);background:var(--surface-2)}
 #dead{filter:grayscale(1);opacity:.8}
 .big{font-family:var(--font-title);font-size:1.5rem;text-align:center;line-height:1.4}
+.overlay{position:fixed;inset:0;background:rgba(5,8,18,.85);display:none;align-items:flex-end;justify-content:center;z-index:8}
+.overlay.on{display:flex}
+.sheet{background:var(--surface);width:100%;max-width:460px;padding:20px;border-radius:22px 22px 0 0;max-height:80%;overflow:auto;display:grid;gap:10px}
 .mini{padding:9px 16px;font-size:.9rem;flex-shrink:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -134,6 +137,7 @@ button.pick.sel{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);
 </section>
 
 <div id="toast" role="status"></div>
+<div id="picker" class="overlay"><div class="sheet"><p class="big" id="pickTitle" style="font-size:1.2rem"></p><div id="pickList" style="display:grid"></div><button id="pickCancel" class="ghost">Άκυρο</button></div></div>
 
 <!-- ΝΥΧΤΕΡΙΝΗ ΕΝΕΡΓΕΙΑ -->
 <section id="act" class="screen">
@@ -163,7 +167,9 @@ button.pick.sel{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);
 <section id="day" class="screen">
   <h1 id="dayTitle" style="font-size:1.6rem;margin-top:2vh;text-align:center"></h1>
   <p class="big" id="dayTimer" style="font-size:2.4rem;color:var(--gold)"></p>
+  <p class="big" id="gagBanner" style="display:none;color:var(--danger)">🤐 ΣΙΩΠΗ: δεν μιλάς σήμερα</p>
   <p class="hint" id="dayNote"></p>
+  <ul class="players" id="whispers"></ul>
   <div id="voteBox" style="display:none">
     <p class="big" style="font-size:1.2rem;margin-bottom:10px">Ποιος πρέπει να φύγει;</p>
     <div id="voteList" style="display:grid"></div>
@@ -255,6 +261,19 @@ const MIN_PLAYERS = 4, MAX_PLAYERS = 15;
 
 /* ===== Ρόλοι ===== */
 function say(t){ try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; u.rate = .9; speechSynthesis.speak(u); } catch (e) {} }
+let actx = null, lastPK = null;
+function sfx(notes, dur = .22){
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    notes.forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + i * dur;
+      o.type = 'triangle'; o.frequency.value = f; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.18, t + .03); g.gain.exponentialRampToValueAtTime(.0001, t + dur * 1.6);
+      o.start(t); o.stop(t + dur * 1.7);
+    });
+  } catch (e) {}
+}
+const PHASE_SFX = { reveal: [330, 392], night: [220, 196, 165], dawn: [392, 523, 659], day: [392, 440], vote: [330, 330], result: [262, 196], end: [523, 659, 784, 1047] };
 const rand = n => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; };
 const ROLES = [
  {id:'godfather',team:'mafia',name:'Αρχιμαφιόζος',desc:'Ο Αστυνόμος τον βλέπει «Αθώο». Έχει τον τελικό λόγο στη δολοφονία.',max:1},
@@ -558,6 +577,8 @@ async function handleGame(room){
     curGame = g.id; privP = null; myPriv = null; adminPriv = null; shownReveal = false; actDay = -1; saidDay = -1; resolving = false; window.__bn = false;
     $('flip').classList.remove('open'); $('btnReady').disabled = false; $('btnReady').textContent = 'Το είδα, είμαι έτοιμος';
   }
+  const pk = g.id + g.phase + g.day;
+  if (pk !== lastPK) { lastPK = pk; sfx(PHASE_SFX[g.phase] || [440]); buzz(); }
   if (!privP) privP = (async () => {
     myPriv = (await db.ref(`rooms/${pin}/private/${uid}`).get()).val();
     if (isAdmin) adminPriv = (await db.ref(`rooms/${pin}/private`).get()).val();
@@ -591,7 +612,7 @@ async function handleGame(room){
     const need = Object.keys(g.alive).filter(i => g.alive[i]);
     if (isHost && !resolving && need.every(i => g.actions && g.actions[i])) resolveNight(room);
   } else if (g.phase === 'dawn') renderDawn(room);
-  else if (g.phase === 'day' || g.phase === 'vote') { if (!g.alive[uid] && !isHost) show('dead'); else renderDay(room); }
+  else if (g.phase === 'day' || g.phase === 'vote') { const sp = g.fx && g.fx.seance && !(g.out || {})[uid]; if (!g.alive[uid] && !sp && !isHost) show('dead'); else renderDay(room); }
   else if (g.phase === 'result') renderResult(room);
   else if (g.phase === 'end') renderEnd(room);
 }
@@ -702,7 +723,7 @@ async function renderEnd(room){
   if (isHost && saidDay !== -2) { saidDay = -2; say(g.winner === 'city' ? 'Η Πόλη νίκησε.' : 'Η Μαφία νίκησε.'); }
 }
 /* ===== Μέρα, κάρτες, ψηφοφορία ===== */
-const PLAYABLE = ['double','shield','mirror','spotlight','blind','postpone','blank','revive'];
+const PLAYABLE = CARDS.map(c => c.id);
 const DAY_SEC = 150, RW = { 'Κοινή': 6, 'Σπάνια': 3, 'Επική': 1 };
 const aliveIds = g => Object.keys(g.alive).filter(i => g.alive[i]);
 async function startDay(room){
@@ -722,16 +743,20 @@ async function startVote(room){
 let saidNotice = null;
 function renderDay(room){
   const g = room.game, isVote = g.phase === 'vote', me = g.alive[uid], fx = g.fx || {};
+  const canVote = me || (fx.seance && !(g.out || {})[uid]);
   show('day');
+  $('gagBanner').style.display = (fx.gag && fx.gag[uid]) ? 'block' : 'none';
+  $('whispers').innerHTML = '';
+  Object.values((room.msgs || {})[uid] || {}).slice(-3).forEach(m => { const li = document.createElement('li'); li.textContent = `🤫 ${m.from}: ${m.text}`; $('whispers').appendChild(li); });
   $('dayTitle').textContent = isVote ? 'Ψηφοφορία' : 'Συζήτηση';
   $('dayNote').textContent = g.notice || (me ? '' : 'Είσαι εκτός παιχνιδιού.');
   $('dayTimer').style.display = isVote ? 'none' : 'block';
-  $('voteBox').style.display = isVote && me ? 'block' : 'none';
+  $('voteBox').style.display = isVote && canVote ? 'block' : 'none';
   $('handWrap').style.display = me ? 'block' : 'none';
   $('btnDayNext').style.display = isHost ? 'block' : 'none';
   $('btnDayNext').textContent = isVote ? 'Κλείσιμο ψηφοφορίας' : 'Πάμε σε ψηφοφορία';
   if (isHost && g.notice && g.notice !== saidNotice) { saidNotice = g.notice; say(g.notice); }
-  if (isVote && me) renderVote(room);
+  if (isVote && canVote) renderVote(room);
   renderHand(room);
   if (isHost && isVote && !resolving && aliveIds(g).filter(i => g.silenced !== i).every(i => (g.votes || {})[i])) resolveVote(room);
 }
@@ -764,16 +789,75 @@ function renderHand(room){
     $('hand').appendChild(d);
   });
 }
+const pickPlayer = (title, ids, P) => new Promise(res => {
+  if (!ids.length) { toast('Δεν υπάρχει κατάλληλος παίκτης.'); res(null); return; }
+  $('pickTitle').textContent = title; const box = $('pickList'); box.innerHTML = '';
+  ids.forEach(id => { const b = document.createElement('button'); b.className = 'chip pick'; b.textContent = P[id].name; b.onclick = () => { $('picker').classList.remove('on'); res(id); }; box.appendChild(b); });
+  $('pickCancel').onclick = () => { $('picker').classList.remove('on'); res(null); };
+  $('picker').classList.add('on');
+});
 async function playCard(key, cid){
-  const g = lastRoom.game, c = CARDS.find(x => x.id === cid), upd = {};
-  if (['double','shield','mirror'].includes(cid)) { upd[`game/fx/${cid}/${uid}`] = true; toast(c.name + ': ενεργή (κρυφά)'); }
-  else if (['spotlight','blind','postpone'].includes(cid)) { upd[`game/fx/${cid}`] = true; upd['game/notice'] = 'Παίχτηκε η κάρτα «' + c.name + '»: ' + c.desc + '.'; }
-  else if (cid === 'revive') {
-    const dead = Object.keys(g.alive).filter(i => !g.alive[i]);
-    if (!dead.length) { toast('Δεν υπάρχει νεκρός παίκτης.'); return; }
-    const t = dead[rand(dead.length)]; upd['game/alive/' + t] = true; upd['game/notice'] = lastRoom.players[t].name + ' επέστρεψε στο παιχνίδι!';
+  const room = lastRoom, g = room.game, P = room.players, fx = g.fx || {}, c = CARDS.find(x => x.id === cid), isVote = g.phase === 'vote';
+  const alive = aliveIds(g), others = alive.filter(i => i !== uid), out = g.out || {};
+  const upd = {}, paths = [], pickOne = a => a[rand(a.length)];
+  const setfx = (path, val = true) => { upd[path] = val; paths.push(path); };
+  const note = t => { upd['game/notice'] = t; paths.push('game/notice'); };
+  const hand = i => Object.keys((room.hands || {})[i] || {}).filter(k => !(i === uid && k === key));
+  const cardOf = (i, k) => (room.hands[i] || {})[k];
+  if (['double','shield','mirror','alibi'].includes(cid)) { setfx(`game/fx/${cid}/${uid}`); toast(c.name + ': ενεργή (κρυφά)'); }
+  else if (['spotlight','blind','postpone','seance'].includes(cid)) { setfx(`game/fx/${cid}`); note(`Παίχτηκε η κάρτα «${c.name}»: ${c.desc}.`); }
+  else if (cid === 'gag') {
+    if (isVote) { toast('Το Φίμωτρο παίζεται μόνο στη συζήτηση.'); return; }
+    const t = await pickPlayer('Ποιον φιμώνεις;', others, P); if (!t) return;
+    if (fx.alibi && fx.alibi[t]) toast('Ο στόχος είχε Άλλοθι. Η κάρτα χάθηκε.');
+    else { setfx(`game/fx/gag/${t}`); note(`${P[t].name} δεν μπορεί να μιλήσει για όλη τη μέρα.`); }
+  } else if (cid === 'thief') {
+    if (isVote) { toast('Ο Κλέφτης παίζεται πριν την ψηφοφορία.'); return; }
+    const t = await pickPlayer('Από ποιον κλέβεις;', others, P); if (!t) return;
+    if (fx.alibi && fx.alibi[t]) toast('Ο στόχος είχε Άλλοθι. Η κάρτα χάθηκε.');
+    else { const ks = hand(t); if (!ks.length) { toast('Δεν έχει κάρτες.'); return; }
+      const k = pickOne(ks), cc = cardOf(t, k); upd[`hands/${t}/${k}`] = null; upd[`hands/${uid}/s${Date.now().toString(36)}`] = cc; toast('Έκλεψες: ' + CARDS.find(x => x.id === cc).name); }
+  } else if (cid === 'whisper') {
+    const t = await pickPlayer('Σε ποιον ψιθυρίζεις;', others, P); if (!t) return;
+    const txt = (prompt('Το μήνυμά σου:') || '').trim(); if (!txt) return;
+    upd[`msgs/${t}/${Date.now()}`] = { from: P[uid].name, text: txt.slice(0, 120) }; toast('Ο ψίθυρος στάλθηκε.');
+  } else if (cid === 'suspect') {
+    const t = await pickPlayer('Ποιον θεωρείς ύποπτο;', others, P); if (!t) return;
+    upd[`game/suspects/${uid}`] = t; toast('Σημάδεψες τον ' + P[t].name + '.');
+  } else if (cid === 'swap') {
+    const t = await pickPlayer('Με ποιον αλλάζεις κάρτα;', others, P); if (!t) return;
+    const mine = hand(uid), theirs = hand(t); if (!mine.length || !theirs.length) { toast('Χρειάζονται κάρτες και οι δύο.'); return; }
+    const mk = pickOne(mine), tk = pickOne(theirs), mc = cardOf(uid, mk), tc = cardOf(t, tk);
+    upd[`hands/${uid}/${mk}`] = tc; upd[`hands/${t}/${tk}`] = mc; toast('Πήρες: ' + CARDS.find(x => x.id === tc).name);
+  } else if (cid === 'peek') {
+    const t = await pickPlayer('Ποιανού κάρτα κοιτάς;', others, P); if (!t) return;
+    const ks = hand(t); toast(ks.length ? `${P[t].name} έχει: ` + CARDS.find(x => x.id === cardOf(t, pickOne(ks))).name : 'Δεν έχει κάρτες.');
+  } else if (cid === 'cancel') {
+    const lp = g.lastPlay; if (!lp || Date.now() - lp.ts > 90000) { toast('Δεν υπάρχει κάρτα να ακυρωθεί.'); return; }
+    lp.paths.forEach(pp => { upd[pp] = null; }); upd['game/lastPlay'] = null; upd['game/notice'] = 'Μια κάρτα ακυρώθηκε.';
+    toast('Ακυρώθηκε η κάρτα: ' + CARDS.find(x => x.id === lp.card).name);
+  } else if (cid === 'puppet') {
+    if (!isVote) { toast('Η Μαριονέτα παίζεται στην ψηφοφορία.'); return; }
+    const a = await pickPlayer('Ποιανού την ψήφο ελέγχεις;', others, P); if (!a) return;
+    const t = await pickPlayer('Σε ποιον πηγαίνει η ψήφος του;', alive, P); if (!t) return;
+    setfx(`game/fx/puppet/${a}`, t); toast('Η ψήφος άλλαξε κρυφά.');
+  } else if (cid === 'second') {
+    if (!isVote) { toast('Η Δεύτερη Ευκαιρία παίζεται στην ψηφοφορία.'); return; }
+    const nv = {}; alive.filter(i => P[i].bot).forEach(i => { const o = alive.filter(x => x !== i); nv[i] = pickOne(o); });
+    upd['game/votes'] = Object.keys(nv).length ? nv : null; note('Δεύτερη Ευκαιρία: η ψηφοφορία ξαναρχίζει!');
+  } else if (cid === 'banish') {
+    const dead = Object.keys(g.alive).filter(i => !g.alive[i] && !out[i]);
+    const t = await pickPlayer('Ποιον νεκρό βγάζεις οριστικά;', dead, P); if (!t) return;
+    const role = (await db.ref(`rooms/${pin}/private/${t}/role`).get()).val();
+    upd[`game/out/${t}`] = true; note(`${P[t].name} βγήκε οριστικά από το παιχνίδι. Ήταν: ${ROLES.find(r => r.id === role).name}.`);
+  } else if (cid === 'revive') {
+    const dead = Object.keys(g.alive).filter(i => !g.alive[i] && !out[i]);
+    if (!dead.length) { toast('Δεν υπάρχει νεκρός παίκτης για Ανάσταση.'); return; }
+    const t = pickOne(dead); upd['game/alive/' + t] = true; note(P[t].name + ' επέστρεψε στο παιχνίδι!');
   } else if (cid === 'blank') toast('Δεν έγινε τίποτα… αλλά οι άλλοι δεν το ξέρουν 😉');
-  upd[`hands/${uid}/${key}`] = null; buzz();
+  upd[`hands/${uid}/${key}`] = null;
+  if (cid !== 'cancel') upd['game/lastPlay'] = paths.length ? { card: cid, ts: Date.now(), paths } : null;
+  sfx([660, 880], .12);
   await db.ref('rooms/' + pin).update(upd);
 }
 async function resolveVote(room){
@@ -782,9 +866,11 @@ async function resolveVote(room){
     const g = room.game, P = room.players, fx = g.fx || {}, votes = g.votes || {}, alive = aliveIds(g), tally = {}, ok = t => t && t !== 'skip' && g.alive[t];
     const priv = (await db.ref(`rooms/${pin}/private`).get()).val(), sw = g.swap;
     const swap = t => sw ? (t === sw[0] ? sw[1] : (t === sw[1] ? sw[0] : t)) : t;
-    alive.forEach(v => {
-      if (g.silenced === v || !ok(votes[v])) return;
-      let t = swap(votes[v]); if (fx.mirror && fx.mirror[t]) t = v;
+    const voters = alive.concat(fx.seance ? Object.keys(g.alive).filter(i => !g.alive[i] && !(g.out || {})[i]) : []);
+    voters.forEach(v => {
+      const raw = (fx.puppet && fx.puppet[v]) || votes[v];
+      if (g.silenced === v || !ok(raw)) return;
+      let t = swap(raw); if (fx.mirror && fx.mirror[t]) t = v;
       tally[t] = (tally[t] || 0) + ((fx.double && fx.double[v]) ? 2 : 1);
     });
     if (fx.shield) Object.keys(fx.shield).forEach(id => delete tally[id]);
@@ -796,6 +882,10 @@ async function resolveVote(room){
     upd['game/result'] = { out: out ? P[out].name : null, why, view };
     if (out) {
       upd['game/alive/' + out] = false;
+      if (priv[out].team === 'mafia') {
+        const bag = []; CARDS.filter(x => ((room.config || {}).cards || []).includes(x.id)).forEach(x => { for (let i = 0; i < RW[x.r]; i++) bag.push(x.id); });
+        Object.entries(g.suspects || {}).forEach(([sid, t]) => { if (t === out && g.alive[sid] && bag.length) { upd[`hands/${sid}/r${g.day}a`] = bag[rand(bag.length)]; upd[`hands/${sid}/r${g.day}b`] = bag[rand(bag.length)]; } });
+      }
       const left = alive.filter(i => i !== out), bad = left.filter(i => priv[i].team === 'mafia').length, good = left.filter(i => priv[i].team === 'city').length;
       const winner = priv[out].role === 'jester' ? 'jester' : (bad === 0 ? 'city' : (good === 0 ? 'mafia' : null));
       if (winner) { upd['game/phase'] = 'end'; upd['game/winner'] = winner; }
@@ -825,7 +915,7 @@ $('btnAbstain').onclick = () => db.ref(`rooms/${pin}/game/votes/${uid}`).set('sk
 $('btnDayNext').onclick = () => { const g = lastRoom.game; if (g.phase === 'day') { window.__sv = true; startVote(lastRoom); } else resolveVote(lastRoom); };
 $('btnNextNight').onclick = () => {
   const g = lastRoom.game; saidNotice = null;
-  beginNight(lastRoom, { 'game/day': g.day + 1, 'game/votes': null, 'game/fx': null, 'game/swap': null, 'game/silenced': null, 'game/result': null, 'game/notice': null, 'game/dayEnd': null });
+  beginNight(lastRoom, { 'game/day': g.day + 1, 'game/votes': null, 'game/fx': null, 'game/swap': null, 'game/silenced': null, 'game/result': null, 'game/notice': null, 'game/dayEnd': null, 'game/lastPlay': null, 'game/suspects': null });
 };
 const flipCard = () => $('flip').classList.toggle('open');
 $('flip').onclick = flipCard;
