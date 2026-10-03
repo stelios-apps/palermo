@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Παλέρμο</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Serif:wght@700;800&display=swap&subset=greek" rel="stylesheet">
+<style>
+/* ===== Design tokens (αλλάζεις χρώματα/γραμματοσειρές μόνο εδώ) ===== */
+:root{
+  --bg:#0d1120; --surface:#161b2e; --surface-2:#1f2540; --line:#2b3254;
+  --text:#ece6da; --muted:#8d93ad;
+  --accent:#c8283c; --accent-hover:#e03a4f; --gold:#d4a85a;
+  --danger:#ff6b6b; --radius:14px;
+  --font-body:'Inter',system-ui,sans-serif; --font-title:'Noto Serif',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);
+  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  background-image:radial-gradient(900px 500px at 50% -10%,#1b2142 0%,transparent 70%)}
+.screen{display:none;min-height:100%;max-width:460px;margin:0 auto;padding:28px 20px;flex-direction:column;gap:16px}
+.screen.active{display:flex}
+h1{font-family:var(--font-title);font-weight:800;font-size:2.6rem;letter-spacing:.02em;color:var(--gold);text-align:center;margin-top:8vh}
+.tagline{text-align:center;color:var(--muted);margin-bottom:12px}
+label{font-size:.85rem;color:var(--muted)}
+input{width:100%;padding:15px 16px;border-radius:var(--radius);border:1px solid var(--line);
+  background:var(--surface);color:var(--text);font:inherit;font-size:1.05rem;margin-top:6px}
+input:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button{font:inherit;font-weight:600;font-size:1.05rem;padding:16px;border-radius:var(--radius);border:0;
+  background:var(--accent);color:#fff;cursor:pointer;transition:background .15s,transform .1s}
+button:hover{background:var(--accent-hover)} button:active{transform:scale(.98)}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+button.ghost:hover{background:var(--surface)}
+button:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed}
+.divider{text-align:center;color:var(--muted);font-size:.85rem}
+.error{color:var(--danger);min-height:1.2em;text-align:center;font-size:.95rem}
+.pin-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:20px;display:flex;align-items:center;gap:18px}
+.pin-card .pin{font-family:var(--font-title);font-size:2.8rem;letter-spacing:.12em;color:var(--gold);line-height:1}
+.pin-card small{color:var(--muted);display:block;margin-bottom:6px}
+#qr{background:#fff;padding:6px;border-radius:8px;line-height:0;flex-shrink:0}
+.players-head{display:flex;justify-content:space-between;align-items:baseline}
+.count{color:var(--muted);font-size:.9rem}
+.players{list-style:none;padding:0;display:grid;gap:8px}
+.players li{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 16px;
+  display:flex;justify-content:space-between;align-items:center}
+.badge{font-size:.75rem;color:var(--gold);border:1px solid var(--gold);border-radius:99px;padding:2px 10px}
+.hint{color:var(--muted);font-size:.9rem;text-align:center}
+.spacer{flex:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ΑΡΧΙΚΗ -->
+<section id="home" class="screen active">
+  <h1>ΠΑΛΕΡΜΟ</h1>
+  <p class="tagline">Η νύχτα έπεσε. Ποιος είναι ποιος;</p>
+  <div><label for="name">Το όνομά σου</label>
+    <input id="name" maxlength="14" autocomplete="off" placeholder="π.χ. Νίκος"></div>
+  <button id="btnCreate">Δημιουργία δωματίου</button>
+  <div class="divider">ή μπες σε δωμάτιο που υπάρχει</div>
+  <div><label for="pin">PIN δωματίου</label>
+    <input id="pin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 ψηφία"></div>
+  <button id="btnJoin" class="ghost">Είσοδος</button>
+  <p class="error" id="homeError"></p>
+</section>
+
+<!-- ΑΝΑΜΟΝΗ (LOBBY) -->
+<section id="lobby" class="screen">
+  <div class="pin-card">
+    <div id="qr"></div>
+    <div><small>PIN δωματίου</small><div class="pin" id="pinShow">----</div></div>
+  </div>
+  <div class="players-head"><strong>Παίκτες</strong><span class="count" id="count"></span></div>
+  <ul class="players" id="players"></ul>
+  <div class="spacer"></div>
+  <p class="hint" id="lobbyHint"></p>
+  <button id="btnStart" style="display:none" disabled>Έναρξη παιχνιδιού</button>
+  <button id="btnLeave" class="ghost">Έξοδος</button>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* ===== Firebase ===== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCZXL5WIobetpI7KqnHIPRKjdfyVGIR09o",
+  authDomain: "palermo-6e0bc.firebaseapp.com",
+  databaseURL: "https://palermo-6e0bc-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "palermo-6e0bc",
+  storageBucket: "palermo-6e0bc.firebasestorage.app",
+  messagingSenderId: "575013502874",
+  appId: "1:575013502874:web:bedc9d19202307dfd00423"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const MIN_PLAYERS = 4, MAX_PLAYERS = 15;
+
+/* ===== Βοηθητικά ===== */
+const $ = id => document.getElementById(id);
+let uid = null, pin = null, isHost = false, unsubscribe = null;
+
+function show(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+}
+function setError(msg){ $('homeError').textContent = msg || ''; }
+function buzz(){ if (navigator.vibrate) navigator.vibrate(30); }
+function getName(){
+  const n = $('name').value.trim();
+  if (!n) { setError('Γράψε πρώτα το όνομά σου.'); $('name').focus(); return null; }
+  return n;
+}
+
+/* ===== Σύνδεση (ανώνυμη) ===== */
+const authReady = firebase.auth().signInAnonymously()
+  .then(c => { uid = c.user.uid; })
+  .catch(e => setError('Πρόβλημα σύνδεσης: ' + e.code));
+
+/* ===== Δημιουργία δωματίου ===== */
+async function createRoom(){
+  const name = getName(); if (!name) return;
+  setError(''); buzz(); await authReady;
+  try {
+    let code, tries = 0;
+    do {
+      code = String(Math.floor(1000 + Math.random() * 9000));
+      const snap = await db.ref('rooms/' + code).get();
+      if (!snap.exists()) break;
+    } while (++tries < 10);
+    await db.ref('rooms/' + code).set({
+      host: uid, status: 'lobby', createdAt: firebase.database.ServerValue.TIMESTAMP,
+      players: { [uid]: { name, joinedAt: firebase.database.ServerValue.TIMESTAMP } }
+    });
+    isHost = true; enterLobby(code);
+  } catch (e) { setError('Δεν δημιουργήθηκε δωμάτιο: ' + e.message); }
+}
+
+/* ===== Είσοδος σε δωμάτιο ===== */
+async function joinRoom(){
+  const name = getName(); if (!name) return;
+  const code = $('pin').value.trim();
+  if (!/^\d{4}$/.test(code)) { setError('Το PIN έχει 4 ψηφία.'); return; }
+  setError(''); buzz(); await authReady;
+  try {
+    const snap = await db.ref('rooms/' + code).get();
+    if (!snap.exists()) { setError('Δεν βρέθηκε δωμάτιο με αυτό το PIN.'); return; }
+    const room = snap.val();
+    const already = room.players && room.players[uid];
+    if (room.status !== 'lobby' && !already) { setError('Το παιχνίδι έχει ήδη ξεκινήσει.'); return; }
+    if (!already && Object.keys(room.players || {}).length >= MAX_PLAYERS) { setError('Το δωμάτιο είναι γεμάτο (15).'); return; }
+    await db.ref(`rooms/${code}/players/${uid}`).set({ name, joinedAt: firebase.database.ServerValue.TIMESTAMP });
+    isHost = room.host === uid; enterLobby(code);
+  } catch (e) { setError('Δεν έγινε είσοδος: ' + e.message); }
+}
+
+/* ===== Αναμονή: ζωντανή λίστα παικτών ===== */
+function enterLobby(code){
+  pin = code;
+  $('pinShow').textContent = code;
+  const link = location.origin + location.pathname + '?pin=' + code;
+  $('qr').innerHTML = '';
+  new QRCode($('qr'), { text: link, width: 110, height: 110 });
+  $('btnStart').style.display = isHost ? 'block' : 'none';
+  show('lobby');
+
+  const ref = db.ref('rooms/' + code);
+  const handler = ref.on('value', snap => {
+    if (!snap.exists()) { leaveLocal('Το δωμάτιο έκλεισε.'); return; }
+    const room = snap.val(), players = room.players || {};
+    if (!players[uid]) { leaveLocal('Αφαιρέθηκες από το δωμάτιο.'); return; }
+    const list = Object.entries(players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+    $('count').textContent = `${list.length} / ${MAX_PLAYERS}`;
+    $('players').innerHTML = '';
+    list.forEach(([id, p]) => {
+      const li = document.createElement('li');
+      const span = document.createElement('span');
+      span.textContent = p.name + (id === uid ? ' (εσύ)' : '');
+      li.appendChild(span);
+      if (id === room.host) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'Host'; li.appendChild(b); }
+      $('players').appendChild(li);
+    });
+    const enough = list.length >= MIN_PLAYERS;
+    $('btnStart').disabled = !enough;
+    $('lobbyHint').textContent = isHost
+      ? (enough ? 'Όλα έτοιμα. Ξεκίνα όταν μπουν όλοι.' : `Χρειάζονται τουλάχιστον ${MIN_PLAYERS} παίκτες.`)
+      : 'Περιμένεις τον Host να ξεκινήσει το παιχνίδι…';
+  });
+  unsubscribe = () => ref.off('value', handler);
+}
+
+function leaveLocal(msg){
+  if (unsubscribe) unsubscribe(); unsubscribe = null;
+  pin = null; isHost = false; show('home'); setError(msg || '');
+}
+async function leaveRoom(){
+  if (!pin) return;
+  const code = pin; buzz();
+  if (isHost) await db.ref('rooms/' + code).remove();      // ο Host κλείνει το δωμάτιο
+  else await db.ref(`rooms/${code}/players/${uid}`).remove();
+  leaveLocal('');
+}
+
+/* ===== Κουμπιά ===== */
+$('btnCreate').onclick = createRoom;
+$('btnJoin').onclick = joinRoom;
+$('btnLeave').onclick = leaveRoom;
+$('btnStart').onclick = () => alert('Το Στάδιο 2 (ρυθμίσεις ρόλων) έρχεται στη συνέχεια!');
+
+// Αν ήρθε από QR (?pin=1234), συμπληρώνεται αυτόματα
+const urlPin = new URLSearchParams(location.search).get('pin');
+if (urlPin) $('pin').value = urlPin.slice(0, 4);
+</script>
+</body>
+</html>
