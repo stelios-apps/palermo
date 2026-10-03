@@ -80,6 +80,26 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 .cv-rar{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
 .icon{position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:5;width:40px;height:40px;padding:0;border-radius:50%;font-size:1rem}
 .how p{color:var(--muted);line-height:1.5;font-size:.95rem} .how b{color:var(--text)}
+.hc{display:flex;flex-direction:column;gap:8px}
+.hold,.dc{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation;cursor:pointer;text-align:center}
+.hold{height:130px;border-radius:14px;border:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;transition:border-color .2s,box-shadow .2s}
+.hold .b,.dc .b{font-weight:800;letter-spacing:.2em;color:var(--muted);font-size:.85rem}
+.hold em{font-size:.7rem;color:var(--muted);font-style:normal}
+.hold .f,.dc .f{display:none;flex-direction:column;gap:6px;padding:8px}
+.hold .f small,.dc .f small{color:var(--rc);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+.hold .f strong,.dc .f strong{font-size:1rem}
+.hold.peek,.dc.peek{border-color:var(--rc);box-shadow:0 0 28px -12px var(--rc)}
+.hold.peek .f,.dc.peek .f{display:flex}.hold.peek .b,.hold.peek em,.dc.peek .b{display:none}
+#draw{position:fixed;inset:0;background:rgba(5,7,12,.95);display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:15;padding:20px;text-align:center}
+#draw.on{display:flex}
+.fan{position:relative;width:100%;max-width:340px;height:240px}
+.dc{position:absolute;left:50%;top:20px;width:112px;height:176px;margin-left:-56px;border-radius:16px;border:1px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:center;transition:transform .7s cubic-bezier(.2,.8,.2,1),opacity .45s,box-shadow .3s,border-color .2s;transform:translateY(-320px) scale(.6);opacity:0}
+.fan.in .dc:nth-child(1){transform:translateX(-96px) rotate(-12deg);opacity:1}
+.fan.in .dc:nth-child(2){transform:translateY(-10px);opacity:1;transition-delay:.08s}
+.fan.in .dc:nth-child(3){transform:translateX(96px) rotate(12deg);opacity:1;transition-delay:.16s}
+.fan.in:not(.picked) .dc:hover{box-shadow:0 0 30px -10px var(--accent)}
+.fan.in.picked .dc:not(.chosen){opacity:0;pointer-events:none;transform:translateY(80px) scale(.8);transition-delay:0s}
+.fan.in.picked .dc.chosen{opacity:1;transform:translateY(10px) scale(1.2);transition-delay:0s;box-shadow:0 0 40px -16px var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -145,6 +165,14 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
   <button id="cvClose" class="ghost">Κλείσιμο</button>
 </div></div>
 
+<div id="draw"><p class="big">Τράβηξε μια κάρτα</p><p class="hint" id="drawHint"></p>
+  <div class="fan" id="fan">
+    <div class="dc"><span class="b">ΠΑΛΕΡΜΟ</span><span class="f"><small></small><strong></strong></span></div>
+    <div class="dc"><span class="b">ΠΑΛΕΡΜΟ</span><span class="f"><small></small><strong></strong></span></div>
+    <div class="dc"><span class="b">ΠΑΛΕΡΜΟ</span><span class="f"><small></small><strong></strong></span></div>
+  </div>
+  <button id="drawKeep" style="display:none">Την κράτησα</button></div>
+
 <div id="picker" class="overlay" style="z-index:12"><div class="sheet">
   <p class="big" id="pickTitle" style="font-size:1.1rem"></p>
   <div id="pickList" style="display:grid"></div>
@@ -155,7 +183,7 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 
 <section id="act" class="screen">
   <h1 style="font-size:1.2rem;margin-top:2vh">ΝΥΧΤΑ</h1>
-  <p class="big" id="actTitle"></p>
+  <p class="hint">Άνοιξε τα μάτια σου. Κανείς άλλος δεν βλέπει την οθόνη.</p><p class="big" id="actTitle"></p><p class="hint" id="actMates"></p>
   <div id="actList" style="display:grid"></div>
   <button id="btnActOk" disabled>Επιβεβαίωση</button>
   <button id="btnActSkip" class="ghost" style="display:none">Παράλειψη</button>
@@ -231,9 +259,9 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 <section id="night" class="screen" style="align-items:center;justify-content:center;text-align:center">
   <div class="moon"></div>
   <h1 style="margin-top:12px;font-size:1.5rem">Η νύχτα έπεσε…</h1>
-  <p class="hint">Η κίνησή σου καταχωρήθηκε. Περιμένουμε τους υπόλοιπους.</p>
+  <p class="hint">Κλείσε τα μάτια. Κράτα το κινητό κάτω και μην κάνεις θόρυβο.</p>
   <p class="hint" id="nightCount"></p>
-  <button id="btnForce" class="ghost" style="display:none">Τέλος νύχτας (Host)</button>
+  <button id="btnForce" class="ghost" style="display:none">Παράλειψη αναμονής (Host)</button>
 </section>
 
 <section id="setup" class="screen">
@@ -280,6 +308,18 @@ function say(...parts){
   try { speechSynthesis.cancel();
     parts.flat().filter(Boolean).forEach(t => { const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = .88; u.pitch = .85; speechSynthesis.speak(u); });
   } catch (e) {}
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function sayWait(...parts){
+  const txt = parts.flat().filter(Boolean), len = txt.join(' ').length;
+  if (muted || !window.speechSynthesis || !txt.length) return sleep(len * 70 + 900);
+  return new Promise(res => {
+    try {
+      speechSynthesis.cancel(); let n = txt.length; const guard = setTimeout(res, len * 140 + 5000);
+      txt.forEach(t => { const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = .88; u.pitch = .85;
+        u.onend = u.onerror = () => { if (--n === 0) { clearTimeout(guard); setTimeout(res, 700); } }; speechSynthesis.speak(u); });
+    } catch (e) { res(); }
+  });
 }
 const said = new Set();
 const once = (k, f) => { if (said.has(k)) return; said.add(k); f(); };
@@ -443,7 +483,7 @@ const authReady = new Promise(resolve => {
   let first = true;
   firebase.auth().onAuthStateChanged(user => {
     if (user) { uid = user.uid; isAdmin = !user.isAnonymous && user.email === ADMIN_EMAIL; if (first) { first = false; resolve(); } }
-    else firebase.auth().signInAnonymously().catch(e => setError('Πρόβλημα σύνδεσης: ' + e.code));
+    else firebase.auth().signInAnonymously().catch(e => setError(e.code === 'auth/admin-restricted-operation' ? 'Στο Firebase πρέπει να ενεργοποιήσεις την Ανώνυμη σύνδεση (Authentication → Sign-in method → Anonymous).' : 'Πρόβλημα σύνδεσης: ' + e.code));
   });
 });
 
@@ -495,7 +535,7 @@ async function joinRoom(){
     isHost = room.host === uid; enterLobby(code);
   } catch (e) { setError('Δεν έγινε είσοδος: ' + e.message); }
 }
-function resetGameLocal(){ curGame = null; privP = null; myPriv = null; adminPriv = null; shownReveal = false; actDay = -1; resolving = false; window.__bn = false; lastPK = null; said.clear(); spoken.clear(); }
+function resetGameLocal(){ curGame = null; privP = null; myPriv = null; adminPriv = null; shownReveal = false; actDay = -1; resolving = false; window.__bn = false; lastPK = null; said.clear(); spoken.clear(); drawKey = null; window.__run = false; window.__skip = false; $('draw').classList.remove('on'); }
 function enterLobby(code){
   pin = code; resetGameLocal();
   $('pinShow').textContent = code;
@@ -584,7 +624,7 @@ async function handleGame(room){
     const role = ROLES.find(r => r.id === myPriv.role), [tn, col, goal] = TEAM_UI[myPriv.team];
     $('flip').style.setProperty('--team', col);
     $('rTeam').textContent = tn; $('rName').textContent = role.name; $('rDesc').textContent = role.desc; $('rGoal').textContent = goal;
-    $('rMates').textContent = (myPriv.mates || []).length ? 'Η Μαφία σου: ' + myPriv.mates.join(', ') : (myPriv.team === 'mafia' ? 'Είσαι μόνος στη Μαφία.' : '');
+    $('rMates').textContent = myPriv.team === 'mafia' ? 'Τους συμμάχους σου θα τους γνωρίσεις τη νύχτα.' : '';
     if (isAdmin && adminPriv) {
       $('adminRoles').style.display = 'block'; $('adminRolesList').innerHTML = '';
       Object.entries(adminPriv).forEach(([id, v]) => { const li = document.createElement('li'); li.textContent = `${room.players[id].name}: ${ROLES.find(r => r.id === v.role).name}`; $('adminRolesList').appendChild(li); });
@@ -602,13 +642,13 @@ async function handleGame(room){
   } else if (g.phase === 'night') {
     window.__bn = false;
     $('btnForce').style.display = isHost ? 'block' : 'none';
-    const need = Object.keys(g.alive).filter(i => g.alive[i]), doneN = need.filter(i => g.actions && g.actions[i]).length;
-    $('nightCount').textContent = `Έτοιμοι: ${doneN} / ${need.length}`;
+    const st = (g.steps || [])[g.step];
+    const awake = g.alive[uid] && st && (st.k === 'mafia' ? myPriv.team === 'mafia' : st.k === myPriv.role);
+    $('nightCount').textContent = isHost && st ? 'Τώρα ξυπνά: ' + (st.k === 'mafia' ? 'Μαφία' : ROLES.find(r => r.id === st.k).name) : '';
     if (!g.alive[uid]) show('dead');
-    else if (g.actions && g.actions[uid]) show('night');
-    else { if (actDay !== g.day) { actDay = g.day; initAct(); } renderStep(room); show('act'); }
-    if (isHost) once('n' + g.day, () => say('Η νύχτα πέφτει. Η πόλη κοιμάται.', 'Η Μαφία διαλέγει θύμα.', 'Όποιος έχει ειδικό ρόλο, κάνει τώρα την κίνησή του στο κινητό, χωρίς να μιλά.'));
-    if (isHost && !resolving && need.every(i => g.actions && g.actions[i])) resolveNight(room);
+    else if (awake && !(g.actions && g.actions[uid])) { const k = g.day + ':' + g.step; if (actDay !== k) { actDay = k; initAct(); } renderStep(room); show('act'); }
+    else show('night');
+    if (isHost && !window.__run) { window.__run = true; runNight(room).catch(e => toast('Σφάλμα νύχτας: ' + e.message)).finally(() => { window.__run = false; }); }
   } else if (g.phase === 'dawn') renderDawn(room);
   else if (g.phase === 'day' || g.phase === 'vote') { const sp = g.fx && g.fx.seance && !(g.out || {})[uid]; if (!g.alive[uid] && !sp && !isHost) show('dead'); else renderDay(room); }
   else if (g.phase === 'result') renderResult(room);
@@ -625,14 +665,14 @@ const POWER = {
 };
 let actDay = -1, actSteps = [], actState = null, resolving = false;
 function initAct(){
-  actSteps = []; const r = myPriv.role;
-  if (myPriv.team === 'mafia') actSteps.push({ key: 'kill', t: 'Μαφία: ποιον δολοφονείτε;', need: 1, noSelf: true });
-  if (POWER[r]) actSteps.push({ key: 'power', t: POWER[r][0], need: POWER[r][1], skip: r === 'sniper' });
-  if (!actSteps.length) actSteps.push({ key: 'decoy', t: 'Δεν έχεις νυχτερινή δύναμη. Διάλεξε οποιονδήποτε, για να μη φανεί ποιος έχει ρόλο.', need: 1 });
+  actSteps = []; const g = lastRoom.game, st = g.steps[g.step], r = myPriv.role;
+  if (st.k === 'mafia') { actSteps.push({ key: 'kill', t: 'Μαφία: ποιον δολοφονείτε;', need: 1, noSelf: true }); if (POWER[r]) actSteps.push({ key: 'power', t: POWER[r][0], need: POWER[r][1] }); }
+  else actSteps.push({ key: 'power', t: POWER[r][0], need: POWER[r][1], skip: r === 'sniper' });
   actState = { i: 0, sel: [], picks: {} };
 }
 function renderStep(room){
   if (!actState) return;
+  $('actMates').textContent = myPriv.team === 'mafia' && (myPriv.mates || []).length ? 'Η Μαφία σου: ' + myPriv.mates.join(', ') : '';
   const st = actSteps[actState.i], alive = Object.keys(room.game.alive).filter(i => room.game.alive[i]);
   $('actTitle').textContent = st.t; $('actList').innerHTML = '';
   alive.filter(id => !(st.noSelf && id === uid)).forEach(id => {
@@ -654,6 +694,9 @@ function stepDone(skip){
 async function beginNight(room, extra = {}){
   const priv = (await db.ref(`rooms/${pin}/private`).get()).val(), g = room.game;
   const alive = Object.keys(g.alive).filter(i => g.alive[i]), upd = { 'game/phase': 'night', ...extra };
+  const rs = (room.config || {}).roles || {}, steps = [{ k: 'mafia' }];
+  ['doctor','cop','bodyguard','tracker','swapper','sniper'].forEach(r => { if (rs[r]) steps.push({ k: r }); });
+  upd['game/steps'] = steps; upd['game/step'] = -1;
   const pick = a => a[rand(a.length)];
   alive.filter(i => room.players[i].bot).forEach(i => {
     const others = alive.filter(x => x !== i), foes = priv[i].team === 'mafia' ? others.filter(x => priv[x].team !== 'mafia') : others;
@@ -661,6 +704,26 @@ async function beginNight(room, extra = {}){
     upd['game/actions/' + i] = { kill: pick(foes.length ? foes : others), power, power2: pick(alive.filter(x => x !== power)), done: true };
   });
   await db.ref('rooms/' + pin).update(upd);
+}
+const WAKE_Q = { doctor: 'Ποιον σώζει απόψε;', cop: 'Ποιον ελέγχει;', bodyguard: 'Ποιον φυλάει;', tracker: 'Ποιον παρακολουθεί;', swapper: 'Ποιες δύο ψήφους ανταλλάσσει;', sniper: 'Θα πυροβολήσει κάποιον;' };
+async function runNight(room0){
+  const day = room0.game.day, gid = room0.game.id, ok = () => lastRoom && lastRoom.game && lastRoom.game.id === gid && lastRoom.game.phase === 'night';
+  const priv = (await db.ref(`rooms/${pin}/private`).get()).val(), steps = room0.game.steps || [], st0 = room0.game.step;
+  if (st0 == null || st0 < 0) { await sayWait('Έπεσε η νύχτα στο Παλέρμο. Όλοι κλείνουν τα μάτια τους και κοιμούνται. Απαγορεύεται οποιαδήποτε κίνηση ή θόρυβος.'); await sleep(1200); }
+  for (let i = Math.max(0, st0 == null ? 0 : st0); i < steps.length && ok(); i++) {
+    const st = steps[i], mafia = st.k === 'mafia', rn = mafia ? null : ROLES.find(r => r.id === st.k).name;
+    await db.ref(`rooms/${pin}/game/step`).set(i);
+    await sayWait(mafia ? ['Οι μαφιόζοι ανοίγουν τα μάτια τους.' + (day === 0 ? ' Κοιτάξτε ο ένας τον άλλον και γνωριστείτε.' : ''), 'Συμφωνήστε σιωπηλά, με νεύματα, ποιον θα δολοφονήσετε. Διαλέξτε το θύμα στο κινητό σας.'] : [`Ξυπνάει ο ${rn}.`, WAKE_Q[st.k]]);
+    const t0 = Date.now(), g = () => lastRoom.game;
+    const mem = () => Object.keys(g().alive).filter(x => g().alive[x] && (mafia ? priv[x].team === 'mafia' : priv[x].role === st.k));
+    const idle = !mem().length, wait = idle ? 6000 + rand(5000) : (mafia ? 120000 : 60000);
+    while (ok() && !window.__skip && Date.now() - t0 < wait) { if (!idle && mem().every(x => g().actions && g().actions[x])) break; await sleep(500); }
+    window.__skip = false;
+    if (!ok()) return;
+    await sayWait(mafia ? 'Το θύμα σημαδεύεται. Οι μαφιόζοι κλείνουν τα μάτια τους.' : `Ο ${rn} κλείνει τα μάτια του.`);
+    await sleep(800);
+  }
+  if (ok()) await resolveNight(lastRoom);
 }
 const mafiaWins = (bad, good) => bad > 0 && bad >= good;
 async function resolveNight(room){
@@ -697,7 +760,7 @@ async function resolveNight(room){
     dead.forEach(id => { upd['game/alive/' + id] = false; });
     const left = alive.filter(i => !dead.has(i)), bad = left.filter(i => priv[i].team === 'mafia').length, good = left.filter(i => priv[i].team === 'city').length;
     const winner = bad === 0 ? 'city' : (mafiaWins(bad, good) ? 'mafia' : null);
-    Object.assign(upd, { 'game/phase': winner ? 'end' : 'dawn', 'game/winner': winner, 'game/day': g.day + 1, 'game/actions': null,
+    Object.assign(upd, { 'game/phase': winner ? 'end' : 'dawn', 'game/winner': winner, 'game/day': g.day + 1, 'game/actions': null, 'game/step': null, 'game/steps': null,
       'game/results': res, 'game/dawn': { deaths: [...dead].map(i => P[i].name) } });
     await db.ref('rooms/' + pin).update(upd);
   } catch (e) { toast('Σφάλμα νύχτας: ' + e.message); }
@@ -709,7 +772,7 @@ function renderDawn(room){
   $('dawnText').textContent = text; $('dawnPrivate').textContent = r ? 'Μυστική πληροφορία: ' + r : '';
   $('dawnDead').textContent = g.alive[uid] ? '' : 'Έχεις βγει από το παιχνίδι. Περίμενε… ίσως κάποιος σε φέρει πίσω.';
   show('dawn'); $('btnStartDay').style.display = isHost ? 'block' : 'none'; $('dawnWait').textContent = isHost ? '' : 'Περιμένουμε τον Host να ξεκινήσει τη μέρα.';
-  if (isHost) once('d' + g.day, () => say('Ξημερώνει. Ανοίξτε τα μάτια.', dead.length ? 'Η πόλη βρήκε νεκρό: ' + joinNames(dead) + '.' : 'Απόψε δεν πέθανε κανείς. Η πόλη επέζησε.'));
+  if (isHost) once('d' + g.day, () => say('Ξημέρωσε στο Παλέρμο! Ανοίγουν όλοι τα μάτια τους.', dead.length ? (dead.length > 1 ? 'Δυστυχώς, τα θύματα της νύχτας ήταν: ' : 'Δυστυχώς, το θύμα της νύχτας ήταν: ') + joinNames(dead) + (dead.length > 1 ? '. Βγαίνουν από το παιχνίδι και δεν μπορούν να μιλούν άλλο.' : '. Βγαίνει από το παιχνίδι και δεν μπορεί να μιλάει άλλο.') : 'Απόψε δεν πέθανε κανείς. Η πόλη επέζησε.'));
 }
 async function renderEnd(room){
   const g = room.game, priv = (await db.ref(`rooms/${pin}/private`).get()).val();
@@ -740,13 +803,13 @@ async function startDay(room){
     });
   }
   window.__sv = false; window.__w30 = false; await db.ref('rooms/' + pin).update(upd);
-  say('Ξεκινά η συζήτηση. Έχετε δύο λεπτά και μισό.', 'Μιλήστε, κατηγορήστε, παίξτε κάρτες και βρείτε τη Μαφία.');
+  say('Πρώτα, ο καθένας τραβά μια κάρτα από το κινητό του.', 'Ξεκινάει η συζήτηση μεταξύ των πολιτών, για να βρουν ποιος είναι ο δολοφόνος ανάμεσά μας. Έχετε δύο λεπτά και μισό.');
 }
 async function startVote(room){
   const g = room.game, alive = aliveIds(g), upd = { 'game/phase': 'vote' };
   alive.filter(i => room.players[i].bot).forEach(i => { const o = alive.filter(x => x !== i); upd['game/votes/' + i] = o[rand(o.length)]; });
   await db.ref('rooms/' + pin).update(upd);
-  say('Τέλος συζήτησης. Ώρα για ψηφοφορία. Ψηφίστε στο κινητό σας.');
+  say('Η ώρα της κάλπης έφτασε. Ποιον ψηφίζετε για ύποπτο; Ψηφίστε τώρα στο κινητό σας.');
 }
 function renderDay(room){
   const g = room.game, isVote = g.phase === 'vote', me = g.alive[uid], fx = g.fx || {};
@@ -767,8 +830,28 @@ function renderDay(room){
   $('btnDayNext').textContent = isVote ? 'Κλείσιμο ψηφοφορίας' : 'Πάμε σε ψηφοφορία';
   if (isHost) Object.keys(feed).forEach(k => { if (!spoken.has(g.id + k)) { spoken.add(g.id + k); say(feed[k]); } });
   if (isVote && canVote) renderVote(room);
+  const dk = 'd' + g.day, dcid = ((room.hands || {})[uid] || {})[dk];
+  if (me && dcid && !((g.drawn || {})[uid] || {})[dk]) openDraw(dcid, dk, g);
   renderHand(room);
   if (isHost && isVote && !resolving && aliveIds(g).filter(i => g.silenced !== i).every(i => (g.votes || {})[i])) resolveVote(room);
+}
+let drawKey = null, drawDk = null;
+function openDraw(cid, dk, g){
+  if (drawKey === g.id + dk) return; drawKey = g.id + dk; drawDk = dk;
+  const c = CARDS.find(x => x.id === cid), fan = $('fan');
+  fan.className = 'fan'; $('drawKeep').style.display = 'none'; $('drawHint').textContent = 'Διάλεξε μία από τις τρεις κάρτες.';
+  fan.querySelectorAll('.dc').forEach(d => {
+    d.className = 'dc'; d.style.setProperty('--rc', RC[c.r]);
+    d.querySelector('small').textContent = c.r; d.querySelector('strong').textContent = c.name;
+    d.onclick = () => { if (fan.classList.contains('picked')) return; fan.classList.add('picked'); d.classList.add('chosen'); buzz(); sfx([523, 659], .12);
+      $('drawHint').textContent = 'Κράτα πατημένη την κάρτα για να τη δεις. Όταν την αφήσεις, κρύβεται.';
+      setTimeout(() => { $('drawKeep').style.display = 'block'; }, 900); };
+    d.onpointerdown = () => { if (d.classList.contains('chosen')) d.classList.add('peek'); };
+    ['pointerup','pointerleave','pointercancel'].forEach(e => d.addEventListener(e, () => d.classList.remove('peek')));
+    d.oncontextmenu = e => e.preventDefault();
+  });
+  $('draw').classList.add('on'); sfx([392, 440, 523], .12);
+  setTimeout(() => fan.classList.add('in'), 80);
 }
 function renderVote(room){
   const g = room.game, fx = g.fx || {}, votes = g.votes || {}, alive = aliveIds(g), open = fx.spotlight && !fx.blind, muteMe = g.silenced === uid;
@@ -787,15 +870,19 @@ function renderVote(room){
   if (open) alive.forEach(v => { if (votes[v]) { const li = document.createElement('li'); li.textContent = `${room.players[v].name} → ${votes[v] === 'skip' ? 'Λευκό' : room.players[votes[v]].name}`; $('voteOpen').appendChild(li); } });
 }
 function renderHand(room){
-  const h = (room.hands || {})[uid] || {}, keys = Object.keys(h), box = $('hand'); box.innerHTML = '';
+  const h = (room.hands || {})[uid] || {}, keys = Object.keys(h), box = $('hand'); if (box.querySelector('.peek')) return; box.innerHTML = '';
   if (!keys.length) { box.innerHTML = '<p class="hint" style="grid-column:1/-1">Δεν έχεις κάρτες. Νέα κάρτα έρχεται κάθε πρωί.</p>'; return; }
   keys.forEach(k => {
     const c = CARDS.find(x => x.id === h[k]); if (!c) return;
-    const b = document.createElement('button'); b.className = 'card'; b.style.setProperty('--rc', RC[c.r]);
-    b.innerHTML = '<small></small><strong></strong><span></span>';
-    b.querySelector('small').textContent = c.r; b.querySelector('strong').textContent = c.name; b.querySelector('span').textContent = c.desc;
-    b.onclick = () => openCard(k, c);
-    box.appendChild(b);
+    const w = document.createElement('div'); w.className = 'hc';
+    w.innerHTML = '<div class="hold"><span class="b">ΠΑΛΕΡΜΟ</span><em>κράτα πατημένο για να τη δεις</em><span class="f"><small></small><strong></strong></span></div><button class="mini ghost">Παίξε</button>';
+    const hd = w.querySelector('.hold'); hd.style.setProperty('--rc', RC[c.r]);
+    hd.querySelector('small').textContent = c.r; hd.querySelector('strong').textContent = c.name;
+    hd.addEventListener('pointerdown', () => hd.classList.add('peek'));
+    ['pointerup','pointerleave','pointercancel'].forEach(e => hd.addEventListener(e, () => hd.classList.remove('peek')));
+    hd.addEventListener('contextmenu', e => e.preventDefault());
+    w.querySelector('button').onclick = () => openCard(k, c);
+    box.appendChild(w);
   });
 }
 function openCard(key, c){
@@ -954,7 +1041,8 @@ $('btnReady').onclick = () => { buzz(); db.ref(`rooms/${pin}/game/ready/${uid}`)
 $('btnPlay').onclick = startGame;
 $('btnActOk').onclick = () => stepDone(false);
 $('btnActSkip').onclick = () => stepDone(true);
-$('btnForce').onclick = () => { if (lastRoom && lastRoom.game) resolveNight(lastRoom); };
+$('btnForce').onclick = () => { window.__skip = true; };
+$('drawKeep').onclick = () => { $('draw').classList.remove('on'); db.ref(`rooms/${pin}/game/drawn/${uid}/${drawDk}`).set(true); };
 $('btnCreate').onclick = createRoom;
 $('btnJoin').onclick = joinRoom;
 $('btnLeave').onclick = leaveRoom;
