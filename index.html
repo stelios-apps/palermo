@@ -100,6 +100,10 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 .fan.in:not(.picked) .dc:hover{box-shadow:0 0 30px -10px var(--accent)}
 .fan.in.picked .dc:not(.chosen){opacity:0;pointer-events:none;transform:translateY(80px) scale(.8);transition-delay:0s}
 .fan.in.picked .dc.chosen{opacity:1;transform:translateY(10px) scale(1.2);transition-delay:0s;box-shadow:0 0 40px -16px var(--accent)}
+#peekBig{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,7,12,.9);z-index:30;pointer-events:none;padding:24px}
+#peekBig.on{display:flex}
+.pk{width:100%;max-width:340px;border:1px solid var(--rc);border-radius:22px;background:var(--surface);padding:34px 24px;text-align:center;display:flex;flex-direction:column;gap:14px;box-shadow:0 0 70px -24px var(--rc);animation:pop .18s ease-out}
+@keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -145,6 +149,7 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 </section>
 
 <div id="toast" role="status"></div>
+<div id="peekBig"><div class="pk"><span class="cv-rar" id="pkR"></span><h2 id="pkN" style="font-size:2rem;font-weight:800"></h2><p id="pkD" style="color:var(--muted);line-height:1.5;font-size:1.05rem"></p><p class="hint" id="pkW"></p></div></div>
 
 <div id="howto" class="overlay"><div class="sheet how">
   <h2>Πώς παίζεται</h2>
@@ -835,7 +840,10 @@ function renderDay(room){
   renderHand(room);
   if (isHost && isVote && !resolving && aliveIds(g).filter(i => g.silenced !== i).every(i => (g.votes || {})[i])) resolveVote(room);
 }
-let drawKey = null, drawDk = null;
+let drawKey = null, drawDk = null, peeking = false;
+const WHEN = { any: 'Παίζεται οποιαδήποτε στιγμή της μέρας.', day: 'Παίζεται μόνο στη συζήτηση.', vote: 'Παίζεται μόνο στην ψηφοφορία.' };
+function peekOn(c){ peeking = true; $('peekBig').querySelector('.pk').style.setProperty('--rc', RC[c.r]); $('pkR').textContent = c.r; $('pkR').style.color = RC[c.r]; $('pkN').textContent = c.name; $('pkD').textContent = c.desc; $('pkW').textContent = WHEN[c.w]; $('peekBig').classList.add('on'); }
+function peekOff(){ peeking = false; $('peekBig').classList.remove('on'); }
 function openDraw(cid, dk, g){
   if (drawKey === g.id + dk) return; drawKey = g.id + dk; drawDk = dk;
   const c = CARDS.find(x => x.id === cid), fan = $('fan');
@@ -846,8 +854,8 @@ function openDraw(cid, dk, g){
     d.onclick = () => { if (fan.classList.contains('picked')) return; fan.classList.add('picked'); d.classList.add('chosen'); buzz(); sfx([523, 659], .12);
       $('drawHint').textContent = 'Κράτα πατημένη την κάρτα για να τη δεις. Όταν την αφήσεις, κρύβεται.';
       setTimeout(() => { $('drawKeep').style.display = 'block'; }, 900); };
-    d.onpointerdown = () => { if (d.classList.contains('chosen')) d.classList.add('peek'); };
-    ['pointerup','pointerleave','pointercancel'].forEach(e => d.addEventListener(e, () => d.classList.remove('peek')));
+    d.onpointerdown = () => { if (d.classList.contains('chosen')) peekOn(c); };
+    ['pointerup','pointerleave','pointercancel'].forEach(e => d.addEventListener(e, peekOff));
     d.oncontextmenu = e => e.preventDefault();
   });
   $('draw').classList.add('on'); sfx([392, 440, 523], .12);
@@ -870,7 +878,7 @@ function renderVote(room){
   if (open) alive.forEach(v => { if (votes[v]) { const li = document.createElement('li'); li.textContent = `${room.players[v].name} → ${votes[v] === 'skip' ? 'Λευκό' : room.players[votes[v]].name}`; $('voteOpen').appendChild(li); } });
 }
 function renderHand(room){
-  const h = (room.hands || {})[uid] || {}, keys = Object.keys(h), box = $('hand'); if (box.querySelector('.peek')) return; box.innerHTML = '';
+  const h = (room.hands || {})[uid] || {}, keys = Object.keys(h), box = $('hand'); if (peeking) return; box.innerHTML = '';
   if (!keys.length) { box.innerHTML = '<p class="hint" style="grid-column:1/-1">Δεν έχεις κάρτες. Νέα κάρτα έρχεται κάθε πρωί.</p>'; return; }
   keys.forEach(k => {
     const c = CARDS.find(x => x.id === h[k]); if (!c) return;
@@ -878,8 +886,8 @@ function renderHand(room){
     w.innerHTML = '<div class="hold"><span class="b">ΠΑΛΕΡΜΟ</span><em>κράτα πατημένο για να τη δεις</em><span class="f"><small></small><strong></strong></span></div><button class="mini ghost">Παίξε</button>';
     const hd = w.querySelector('.hold'); hd.style.setProperty('--rc', RC[c.r]);
     hd.querySelector('small').textContent = c.r; hd.querySelector('strong').textContent = c.name;
-    hd.addEventListener('pointerdown', () => hd.classList.add('peek'));
-    ['pointerup','pointerleave','pointercancel'].forEach(e => hd.addEventListener(e, () => hd.classList.remove('peek')));
+    hd.addEventListener('pointerdown', () => peekOn(c));
+    ['pointerup','pointerleave','pointercancel'].forEach(e => hd.addEventListener(e, peekOff));
     hd.addEventListener('contextmenu', e => e.preventDefault());
     w.querySelector('button').onclick = () => openCard(k, c);
     box.appendChild(w);
@@ -917,11 +925,11 @@ async function playCard(key, cid){
   const hand = i => Object.keys((room.hands || {})[i] || {}).filter(k => !(i === uid && k === key));
   const cardOf = (i, k) => (room.hands[i] || {})[k], cname = id => CARDS.find(x => x.id === id).name;
   if (['double','shield','mirror','alibi'].includes(cid)) { setfx(`game/fx/${cid}/${uid}`); toast(c.name + ': ενεργή. Οι άλλοι δεν το ξέρουν.'); }
-  else if (['spotlight','blind','postpone','seance'].includes(cid)) { setfx(`game/fx/${cid}`); note(`Παίχτηκε η κάρτα ${c.name}. ${c.desc}`); }
+  else if (['spotlight','blind','postpone','seance'].includes(cid)) { setfx(`game/fx/${cid}`); note(`${P[uid].name} έπαιξε «${c.name}»: ${c.desc}`); }
   else if (cid === 'gag') {
     const t = await pickPlayer('Ποιον φιμώνεις;', others, P); if (!t) return;
     if (fx.alibi && fx.alibi[t]) toast('Ο στόχος είχε Άλλοθι. Η κάρτα χάθηκε.');
-    else { setfx(`game/fx/gag/${t}`); note(`${P[t].name} δεν μπορεί να μιλήσει για όλη τη μέρα.`); }
+    else { setfx(`game/fx/gag/${t}`); note(`${P[uid].name} έπαιξε «Φίμωτρο». Στόχος: ${P[t].name}. Δεν μπορεί να μιλήσει για όλη τη μέρα.`); }
   } else if (cid === 'thief') {
     const t = await pickPlayer('Από ποιον κλέβεις;', others, P); if (!t) return;
     if (fx.alibi && fx.alibi[t]) toast('Ο στόχος είχε Άλλοθι. Η κάρτα χάθηκε.');
@@ -944,7 +952,7 @@ async function playCard(key, cid){
     const ks = hand(t); toast(ks.length ? `${P[t].name} έχει: ` + cname(cardOf(t, pickOne(ks))) : 'Δεν έχει κάρτες.');
   } else if (cid === 'cancel') {
     const lp = g.lastPlay; if (!lp || Date.now() - lp.ts > 90000) { toast('Δεν υπάρχει κάρτα να ακυρωθεί.'); return; }
-    lp.paths.forEach(pp => { upd[pp] = null; }); upd['game/lastPlay'] = null; note('Μια κάρτα ακυρώθηκε.');
+    lp.paths.forEach(pp => { upd[pp] = null; }); upd['game/lastPlay'] = null; note(`${P[uid].name} έπαιξε «Άκυρο»: ακυρώθηκε η κάρτα «${cname(lp.card)}».`);
     toast('Ακυρώθηκε η κάρτα: ' + cname(lp.card));
   } else if (cid === 'puppet') {
     const a = await pickPlayer('Ποιανού την ψήφο ελέγχεις;', others, P); if (!a) return;
@@ -952,16 +960,16 @@ async function playCard(key, cid){
     setfx(`game/fx/puppet/${a}`, t); toast('Η ψήφος άλλαξε κρυφά.');
   } else if (cid === 'second') {
     const nv = {}; alive.filter(i => P[i].bot).forEach(i => { nv[i] = pickOne(alive.filter(x => x !== i)); });
-    upd['game/votes'] = Object.keys(nv).length ? nv : null; note('Δεύτερη Ευκαιρία: η ψηφοφορία ξαναρχίζει!');
+    upd['game/votes'] = Object.keys(nv).length ? nv : null; note(`${P[uid].name} έπαιξε «Δεύτερη Ευκαιρία»: η ψηφοφορία ξαναρχίζει από την αρχή!`);
   } else if (cid === 'banish') {
     const dead = Object.keys(g.alive).filter(i => !g.alive[i] && !out[i]);
     const t = await pickPlayer('Ποιον νεκρό βγάζεις οριστικά;', dead, P); if (!t) return;
     const role = (await db.ref(`rooms/${pin}/private/${t}/role`).get()).val();
-    upd[`game/out/${t}`] = true; note(`${P[t].name} βγήκε οριστικά από το παιχνίδι. Ήταν ${ROLES.find(r => r.id === role).name}.`);
+    upd[`game/out/${t}`] = true; note(`${P[uid].name} έπαιξε «Οριστική Έξοδος»: ${P[t].name} βγήκε οριστικά από το παιχνίδι. Ήταν ${ROLES.find(r => r.id === role).name}.`);
   } else if (cid === 'revive') {
     const dead = Object.keys(g.alive).filter(i => !g.alive[i] && !out[i]);
     if (!dead.length) { toast('Δεν υπάρχει νεκρός παίκτης για Ανάσταση.'); return; }
-    const t = pickOne(dead); upd['game/alive/' + t] = true; note(P[t].name + ' επέστρεψε στο παιχνίδι!');
+    const t = pickOne(dead); upd['game/alive/' + t] = true; note(`${P[uid].name} έπαιξε «Ανάσταση»: ${P[t].name} επέστρεψε στο παιχνίδι!`);
   } else if (cid === 'blank') toast('Δεν έγινε τίποτα… αλλά οι άλλοι δεν το ξέρουν 😉');
   upd[`hands/${uid}/${key}`] = null;
   if (cid !== 'cancel') upd['game/lastPlay'] = paths.length ? { card: cid, ts: Date.now(), paths } : null;
