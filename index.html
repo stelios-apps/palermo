@@ -65,6 +65,17 @@ button:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowe
     <input id="pin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 ψηφία"></div>
   <button id="btnJoin" class="ghost">Είσοδος</button>
   <p class="error" id="homeError"></p>
+  <button id="btnAdminOpen" class="ghost" style="padding:10px;font-size:.85rem;margin-top:auto">Admin</button>
+</section>
+
+<!-- ΣΥΝΔΕΣΗ ADMIN -->
+<section id="admin" class="screen">
+  <h1 style="font-size:2rem">Admin</h1>
+  <div><label for="aEmail">Email</label><input id="aEmail" type="email" autocomplete="username"></div>
+  <div><label for="aPass">Κωδικός</label><input id="aPass" type="password" autocomplete="current-password"></div>
+  <button id="btnAdminLogin">Σύνδεση</button>
+  <button id="btnAdminBack" class="ghost">Πίσω</button>
+  <p class="error" id="adminError"></p>
 </section>
 
 <!-- ΑΝΑΜΟΝΗ (LOBBY) -->
@@ -76,6 +87,11 @@ button:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowe
   <div class="players-head"><strong>Παίκτες</strong><span class="count" id="count"></span></div>
   <ul class="players" id="players"></ul>
   <div class="spacer"></div>
+  <div id="adminTools" style="display:none;gap:8px;flex-direction:column">
+    <span class="badge" style="align-self:center">Admin · δοκιμαστική λειτουργία</span>
+    <button id="btnAddBot" class="ghost">+ Δοκιμαστικός παίκτης</button>
+    <button id="btnClearBots" class="ghost">Αφαίρεση δοκιμαστικών</button>
+  </div>
   <p class="hint" id="lobbyHint"></p>
   <button id="btnStart" style="display:none" disabled>Έναρξη παιχνιδιού</button>
   <button id="btnLeave" class="ghost">Έξοδος</button>
@@ -102,7 +118,8 @@ const MIN_PLAYERS = 4, MAX_PLAYERS = 15;
 
 /* ===== Βοηθητικά ===== */
 const $ = id => document.getElementById(id);
-let uid = null, pin = null, isHost = false, unsubscribe = null;
+const ADMIN_EMAIL = "stelios.andritsakis@gmail.com";   // <-- το email που θα φτιάξεις στο Firebase
+let uid = null, pin = null, isHost = false, isAdmin = false, unsubscribe = null;
 
 function show(id){
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
@@ -116,9 +133,45 @@ function getName(){
 }
 
 /* ===== Σύνδεση (ανώνυμη) ===== */
-const authReady = firebase.auth().signInAnonymously()
-  .then(c => { uid = c.user.uid; })
-  .catch(e => setError('Πρόβλημα σύνδεσης: ' + e.code));
+const authReady = new Promise(resolve => {
+  let first = true;
+  firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+      uid = user.uid;
+      isAdmin = !user.isAnonymous && user.email === ADMIN_EMAIL;
+      if (first) { first = false; resolve(); }
+    } else {
+      firebase.auth().signInAnonymously().catch(e => setError('Πρόβλημα σύνδεσης: ' + e.code));
+    }
+  });
+});
+
+/* ===== Admin ===== */
+async function adminLogin(){
+  $('adminError').textContent = '';
+  try {
+    await firebase.auth().signInWithEmailAndPassword($('aEmail').value.trim(), $('aPass').value);
+    if (!isAdmin) { await firebase.auth().signOut(); $('adminError').textContent = 'Αυτός ο λογαριασμός δεν είναι Admin.'; return; }
+    $('aPass').value = ''; if (!$('name').value) $('name').value = 'Admin';
+    show('home'); setError('Συνδέθηκες ως Admin.');
+  } catch (e) { $('adminError').textContent = 'Λάθος στοιχεία (' + e.code + ')'; }
+}
+const BOT_NAMES = ['Νίκος','Μαρία','Γιάννης','Ελένη','Κώστας','Σοφία','Δημήτρης','Άννα','Πέτρος','Κατερίνα','Μάκης','Ζωή','Θάνος','Ιωάννα','Στέλιος'];
+async function addBot(){
+  const snap = await db.ref(`rooms/${pin}/players`).get();
+  const players = snap.val() || {};
+  if (Object.keys(players).length >= MAX_PLAYERS) return;
+  const used = Object.values(players).map(p => p.name);
+  const name = (BOT_NAMES.find(n => !used.includes(n)) || 'Bot' + Date.now() % 1000);
+  const id = 'bot_' + Date.now().toString(36) + Math.floor(Math.random() * 99);
+  await db.ref(`rooms/${pin}/players/${id}`).set({ name, bot: true, joinedAt: firebase.database.ServerValue.TIMESTAMP });
+}
+async function clearBots(){
+  const snap = await db.ref(`rooms/${pin}/players`).get();
+  const upd = {};
+  Object.entries(snap.val() || {}).forEach(([id, p]) => { if (p.bot) upd[id] = null; });
+  await db.ref(`rooms/${pin}/players`).update(upd);
+}
 
 /* ===== Δημιουργία δωματίου ===== */
 async function createRoom(){
@@ -165,6 +218,7 @@ function enterLobby(code){
   $('qr').innerHTML = '';
   new QRCode($('qr'), { text: link, width: 110, height: 110 });
   $('btnStart').style.display = isHost ? 'block' : 'none';
+  $('adminTools').style.display = (isAdmin && isHost) ? 'flex' : 'none';
   show('lobby');
 
   const ref = db.ref('rooms/' + code);
@@ -178,7 +232,7 @@ function enterLobby(code){
     list.forEach(([id, p]) => {
       const li = document.createElement('li');
       const span = document.createElement('span');
-      span.textContent = p.name + (id === uid ? ' (εσύ)' : '');
+      span.textContent = p.name + (id === uid ? ' (εσύ)' : '') + (p.bot ? ' 🤖' : '');
       li.appendChild(span);
       if (id === room.host) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'Host'; li.appendChild(b); }
       $('players').appendChild(li);
@@ -208,6 +262,11 @@ async function leaveRoom(){
 $('btnCreate').onclick = createRoom;
 $('btnJoin').onclick = joinRoom;
 $('btnLeave').onclick = leaveRoom;
+$('btnAdminOpen').onclick = () => show('admin');
+$('btnAdminBack').onclick = () => show('home');
+$('btnAdminLogin').onclick = adminLogin;
+$('btnAddBot').onclick = addBot;
+$('btnClearBots').onclick = clearBots;
 $('btnStart').onclick = () => alert('Το Στάδιο 2 (ρυθμίσεις ρόλων) έρχεται στη συνέχεια!');
 
 // Αν ήρθε από QR (?pin=1234), συμπληρώνεται αυτόματα
