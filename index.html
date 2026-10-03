@@ -105,10 +105,19 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 .pk{width:100%;max-width:340px;border:1px solid var(--rc);border-radius:22px;background:var(--surface);padding:34px 24px;text-align:center;display:flex;flex-direction:column;gap:14px;box-shadow:0 0 70px -24px var(--rc);animation:pop .18s ease-out}
 @keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+#scan,#qrBigWrap{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:40;padding:20px;text-align:center}
+#scan{background:#000}
+#qrBigWrap{background:rgba(5,7,12,.95)}
+#scan.on,#qrBigWrap.on{display:flex}
+#scan video{width:100%;max-width:420px;border-radius:18px;background:#111}
+#qrBig{background:#fff;padding:14px;border-radius:14px;line-height:0}
+#qr{cursor:pointer}
+#btnVoice{right:60px}
 </style>
 </head>
 <body>
-<button id="btnMute" class="ghost icon" aria-label="Εκφώνηση">🔊</button>
+<button id="btnMute" class="ghost icon" aria-label="Εκφώνηση">🔊</button><button id="btnVoice" class="ghost icon" aria-label="Φωνή">🎙</button>
 
 <section id="home" class="screen active">
   <h1>ΠΑΛΕΡΜΟ</h1>
@@ -118,6 +127,7 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
   <div class="divider">ή μπες σε δωμάτιο που υπάρχει</div>
   <div><label for="pin">PIN δωματίου</label><input id="pin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 ψηφία"></div>
   <button id="btnJoin" class="ghost">Είσοδος</button>
+  <button id="btnScan" class="ghost">📷 Σάρωση QR</button>
   <p class="error" id="homeError"></p>
   <button id="btnHow" class="ghost">Πώς παίζεται;</button>
   <button id="btnAdminOpen" class="ghost" style="padding:10px;font-size:.8rem;margin-top:auto">Admin</button>
@@ -133,7 +143,7 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 </section>
 
 <section id="lobby" class="screen">
-  <div class="pin-card"><div id="qr"></div><div><small>PIN δωματίου</small><div class="pin" id="pinShow">----</div></div></div>
+  <div class="pin-card"><div id="qr"></div><button id="btnShare" class="ghost mini">Κοινοποίηση link</button><div><small>PIN δωματίου</small><div class="pin" id="pinShow">----</div></div></div>
   <div class="players-head"><strong>Παίκτες</strong><span class="count" id="count"></span></div>
   <ul class="players" id="players"></ul>
   <div class="spacer"></div>
@@ -148,8 +158,16 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
   <button id="btnLeave" class="ghost">Έξοδος</button>
 </section>
 
+<div id="scan"><p class="big">Στόχευσε το QR του δωματίου</p><video id="scanVideo" playsinline muted></video><button id="scanClose" class="ghost">Κλείσιμο</button></div>
+<div id="qrBigWrap"><div id="qrBig"></div><p class="big" id="qrBigPin"></p><button id="qrBigClose" class="ghost">Κλείσιμο</button></div>
 <div id="toast" role="status"></div>
 <div id="peekBig"><div class="pk"><span class="cv-rar" id="pkR"></span><h2 id="pkN" style="font-size:2rem;font-weight:800"></h2><p id="pkD" style="color:var(--muted);line-height:1.5;font-size:1.05rem"></p><p class="hint" id="pkW"></p></div></div>
+<div id="voiceSheet" class="overlay"><div class="sheet">
+  <h2>Φωνή αφηγητή</h2>
+  <p class="hint" style="text-align:left">Πάτα μια φωνή για να την ακούσεις και να την επιλέξεις.</p>
+  <div id="voiceList" style="display:grid"></div>
+  <button id="voiceClose" class="ghost">Κλείσιμο</button>
+</div></div>
 
 <div id="howto" class="overlay"><div class="sheet how">
   <h2>Πώς παίζεται</h2>
@@ -284,6 +302,7 @@ button.card span{color:var(--muted);font-size:.8rem;font-weight:400;line-height:
 </section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -304,15 +323,22 @@ const MIN_PLAYERS = 4, MAX_PLAYERS = 15;
 const ADMIN_EMAIL = "stelios.andritsakis@gmail.com";
 
 /* ===== Εκφώνηση ===== */
-let voice = null, muted = false;
-try { muted = localStorage.getItem('pal_mute') === '1'; } catch (e) {}
-function pickVoice(){ try { const v = speechSynthesis.getVoices(); voice = v.find(x => /^el/i.test(x.lang)) || null; } catch (e) {} }
+let voice = null, muted = false, voiceName = '';
+try { muted = localStorage.getItem('pal_mute') === '1'; voiceName = localStorage.getItem('pal_voice') || ''; } catch (e) {}
+const greekVoices = () => { try { return speechSynthesis.getVoices().filter(x => /^el/i.test(x.lang)); } catch (e) { return []; } };
+function pickVoice(){
+  const all = greekVoices();
+  voice = all.find(x => x.name === voiceName)
+    || all.find(x => /natural|neural|online/i.test(x.name))
+    || all.find(x => /google/i.test(x.name))
+    || all.find(x => /enhanced|premium|melina|stefanos/i.test(x.name))
+    || all[0] || null;
+}
 try { speechSynthesis.onvoiceschanged = pickVoice; pickVoice(); } catch (e) {}
+function utter(t){ const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = .95; u.pitch = 1; return u; }
 function say(...parts){
   if (muted) return;
-  try { speechSynthesis.cancel();
-    parts.flat().filter(Boolean).forEach(t => { const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = .88; u.pitch = .85; speechSynthesis.speak(u); });
-  } catch (e) {}
+  try { speechSynthesis.cancel(); parts.flat().filter(Boolean).forEach(t => speechSynthesis.speak(utter(t))); } catch (e) {}
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function sayWait(...parts){
@@ -321,7 +347,7 @@ function sayWait(...parts){
   return new Promise(res => {
     try {
       speechSynthesis.cancel(); let n = txt.length; const guard = setTimeout(res, len * 140 + 5000);
-      txt.forEach(t => { const u = new SpeechSynthesisUtterance(t); u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = .88; u.pitch = .85;
+      txt.forEach(t => { const u = utter(t);
         u.onend = u.onerror = () => { if (--n === 0) { clearTimeout(guard); setTimeout(res, 700); } }; speechSynthesis.speak(u); });
     } catch (e) { res(); }
   });
@@ -545,7 +571,7 @@ function enterLobby(code){
   pin = code; resetGameLocal();
   $('pinShow').textContent = code;
   $('qr').innerHTML = '';
-  new QRCode($('qr'), { text: location.origin + location.pathname + '?pin=' + code, width: 110, height: 110 });
+  new QRCode($('qr'), { text: location.origin + location.pathname + '?pin=' + code, width: 120, height: 120 });
   $('btnStart').style.display = isHost ? 'block' : 'none';
   $('adminTools').style.display = (isAdmin && isHost) ? 'flex' : 'none';
   show('lobby');
@@ -1028,6 +1054,48 @@ setInterval(() => {
   }
 }, 500);
 
+/* ===== Σάρωση QR ===== */
+let scanStream = null, scanRaf = 0;
+function stopScan(){
+  cancelAnimationFrame(scanRaf);
+  if (scanStream) scanStream.getTracks().forEach(t => t.stop());
+  scanStream = null; $('scanVideo').srcObject = null; $('scan').classList.remove('on');
+}
+async function startScan(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setError('Η κάμερα δουλεύει μόνο με https (π.χ. GitHub Pages).'); return; }
+  try { scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }); }
+  catch (e) { setError('Δεν δόθηκε πρόσβαση στην κάμερα. Επέτρεψέ την από τις ρυθμίσεις του browser.'); return; }
+  const v = $('scanVideo'); v.srcObject = scanStream; await v.play(); $('scan').classList.add('on');
+  const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+  let det = null; try { if (window.BarcodeDetector) det = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) {}
+  const tick = async () => {
+    if (!scanStream) return;
+    if (v.readyState >= 2 && v.videoWidth) {
+      let txt = null;
+      try {
+        if (det) { const r = await det.detect(v); if (r.length) txt = r[0].rawValue; }
+        else if (window.jsQR) { cv.width = v.videoWidth; cv.height = v.videoHeight; cx.drawImage(v, 0, 0); const d = cx.getImageData(0, 0, cv.width, cv.height); const r = jsQR(d.data, d.width, d.height); if (r) txt = r.data; }
+      } catch (e) {}
+      const m = txt && (txt.match(/[?&]pin=(\d{4})/) || txt.match(/^(\d{4})$/));
+      if (m) { stopScan(); $('pin').value = m[1]; buzz(); if (getName()) joinRoom(); return; }
+    }
+    scanRaf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+$('btnScan').onclick = startScan;
+$('scanClose').onclick = stopScan;
+
+/* μεγάλο QR + κοινοποίηση */
+function joinUrl(){ return location.origin + location.pathname + '?pin=' + pin; }
+$('qr').onclick = () => {
+  $('qrBig').innerHTML = ''; new QRCode($('qrBig'), { text: joinUrl(), width: 280, height: 280 });
+  $('qrBigPin').textContent = 'PIN: ' + pin; $('qrBigWrap').classList.add('on');
+};
+$('qrBigClose').onclick = () => $('qrBigWrap').classList.remove('on');
+$('btnShare').onclick = async () => {
+  try { if (navigator.share) await navigator.share({ title: 'Παλέρμο', text: 'Μπες στο δωμάτιο ' + pin, url: joinUrl() }); else { await navigator.clipboard.writeText(joinUrl()); toast('Το link αντιγράφηκε ✓'); } } catch (e) {}
+};
 /* ===== Κουμπιά ===== */
 $('btnStartDay').onclick = () => startDay(lastRoom);
 $('btnAbstain').onclick = () => db.ref(`rooms/${pin}/game/votes/${uid}`).set('skip');
@@ -1041,6 +1109,19 @@ $('btnAgain').onclick = async () => {
   Object.entries(priv).forEach(([id, v]) => last[id] = v.role);
   await db.ref('rooms/' + pin).update({ status: 'lobby', game: null, private: null, hands: null, msgs: null, lastRoles: last });
 };
+$('btnVoice').onclick = () => {
+  const box = $('voiceList'); box.innerHTML = '';
+  const list = greekVoices();
+  if (!list.length) { box.innerHTML = '<p class="hint">Δεν βρέθηκε ελληνική φωνή σε αυτό το κινητό. Δες τις οδηγίες για εγκατάσταση.</p>'; }
+  list.forEach(v => {
+    const b = document.createElement('button'); b.className = 'chip pick' + (voice && voice.name === v.name ? ' sel' : '');
+    b.textContent = v.name;
+    b.onclick = () => { voiceName = v.name; try { localStorage.setItem('pal_voice', v.name); } catch (e) {} pickVoice(); muted = false; setMute(); say('Καλησπέρα. Καλώς ήρθατε στο Παλέρμο.'); $('btnVoice').click(); };
+    box.appendChild(b);
+  });
+  $('voiceSheet').classList.add('on');
+};
+$('voiceClose').onclick = () => $('voiceSheet').classList.remove('on');
 $('btnEndLeave').onclick = leaveRoom;
 const flipCard = () => $('flip').classList.toggle('open');
 $('flip').onclick = flipCard;
